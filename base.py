@@ -326,18 +326,20 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
     all_targets = []
     all_outputs = []
 
+    test_step_start_end_list=[]
+    test_error_categories=[]
+    counter=0
+
     test_loader = tqdm(test_loader)
     num_batches = len(test_loader)
     test_losses = []
 
-    test_step_start_end_list = []
-    counter = 0
-
     with torch.no_grad():
-        for data, target in test_loader:
+        for data, target, error_categories in test_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            total_samples += data.shape[0]
+
+            
             loss = criterion(output, target)
             test_losses.append(loss.item())
 
@@ -349,6 +351,8 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
             counter += data.shape[0]
 
             # Set the description of the tqdm instance to show the loss
+            test_error_categories.append(error_categories)
+            total_samples += data.shape[0]
             test_loader.set_description(f'{phase} Progress: {total_samples}/{num_batches}')
 
     # Flatten lists
@@ -407,7 +411,8 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
         if start - end > 1:
             if sub_step_normalization:
                 prob_range = np.max(step_output) - np.min(step_output)
-                step_output = (step_output - np.min(step_output)) / prob_range
+                if prob_range>0:
+                  step_output = (step_output - np.min(step_output)) / prob_range
 
         mean_step_output = np.mean(step_output)
         step_target = 1 if np.mean(step_target) > 0.95 else 0
@@ -420,7 +425,8 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
     # # Scale the output to [0, 1]
     if step_normalization:
         prob_range = np.max(all_step_outputs) - np.min(all_step_outputs)
-        all_step_outputs = (all_step_outputs - np.min(all_step_outputs)) / prob_range
+        if prob_range>0:
+          all_step_outputs = (all_step_outputs - np.min(all_step_outputs)) / prob_range
 
     all_step_targets = np.array(all_step_targets)
 
@@ -449,4 +455,41 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
     print(f"{phase} Step Level Metrics: {step_metrics}")
     print("----------------------------------------------------------------")
 
-    return test_losses, sub_step_metrics, step_metrics
+    ##----------------CATEGORY LEVEL METRICS---------------------------------
+    category_names={
+      2: "PreparationError",
+      3: "TemperatureError",
+      4: "MeasurementError",
+      5: "TimingError",
+      6: "TechniqueError",
+    }
+
+    category_metrics={}
+    for cat, name in category_names.items():
+      # trova gli steps che contengono questa categoria
+      indices=[i for i, cats in enumerate(test_error_categories) if cat in cats]
+      if len(indices) == 0:
+        continue
+      y_true = np.array([all_step_targets[i] for i in indices])
+      y_pred = np.array([pred_step_labels[i] for i in indices])
+      y_score = np.array([all_step_outputs[i] for i in indices])
+
+      precision = precision_score(y_true, y_pred, zero_division=0)
+      recall = recall_score(y_true, y_pred, zero_division=0)
+      f1 = f1_score(y_true, y_pred, zero_division=0)
+      acc = accuracy_score(y_true, y_pred)
+      aucv = roc_auc_score(y_true, y_score) if len(set(y_true)) > 1 else 0.0
+      pr_auc = binary_auprc(torch.tensor(y_pred), torch.tensor(y_true))
+
+      category_metrics[name] = {
+            const.PRECISION: precision,
+            const.RECALL: recall,
+            const.F1: f1,
+            const.ACCURACY: acc,
+            const.AUC: aucv,
+            const.PR_AUC: pr_auc
+        }
+
+
+
+    return test_losses, sub_step_metrics, step_metrics, category_metrics

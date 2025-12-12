@@ -240,7 +240,7 @@ class CaptainCookStepDataset(Dataset):
             step_error_category_labels
         )
 
-        return step_features, step_labels
+        return step_features, step_labels, step_error_category_labels
 
     def _get_video_features(self, recording_id, step_start_end_list):
         features_path = os.path.join(self._config.segment_features_directory, "video", self._backbone,
@@ -248,9 +248,9 @@ class CaptainCookStepDataset(Dataset):
         features_data = np.load(features_path)
         recording_features = features_data['arr_0']
 
-        step_features, step_labels = self._build_modality_step_features_labels(recording_features, step_start_end_list)
+        step_features, step_labels, step_error_category_labels = self._build_modality_step_features_labels(recording_features, step_start_end_list)
         features_data.close()
-        return step_features, step_labels
+        return step_features, step_labels, step_error_category_labels
 
     def __getitem__(self, idx):
         recording_id = self._step_dict[idx][0]
@@ -260,20 +260,20 @@ class CaptainCookStepDataset(Dataset):
         step_labels = None
         
         assert self._backbone in [const.OMNIVORE, const.SLOWFAST], "Only Omnivore and SlowFast are supported with this codebase"
-        step_features, step_labels = self._get_video_features(recording_id, step_start_end_list)
+        step_features, step_labels, step_error_category_labels = self._get_video_features(recording_id, step_start_end_list)
 
         assert step_features is not None, f"Features not found for recording_id: {recording_id}"
         assert step_labels is not None, f"Labels not found for recording_id: {recording_id}"
 
-        return step_features, step_labels
+        return step_features, step_labels, step_error_category_labels
 
 
 def collate_fn(batch):
     # batch is a list of tuples, and each tuple is (step_features, step_labels)
-    step_features, step_labels = zip(*batch)
+    step_features, step_labels, error_categories = zip(*batch)
 
     # Stack the step_features and step_labels
     step_features = torch.cat(step_features, dim=0)
     step_labels = torch.cat(step_labels, dim=0)
 
-    return step_features, step_labels
+    return step_features, step_labels, error_categories
