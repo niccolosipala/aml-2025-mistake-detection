@@ -351,7 +351,7 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
             counter += data.shape[0]
 
             # Set the description of the tqdm instance to show the loss
-            test_error_categories.append(error_categories)
+            test_error_categories.append(error_categories[0])
             total_samples += data.shape[0]
             test_loader.set_description(f'{phase} Progress: {total_samples}/{num_batches}')
 
@@ -465,14 +465,16 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
     }
 
     category_metrics={}
+    num_steps=len(all_step_targets)
+
     for cat, name in category_names.items():
-      # trova gli steps che contengono questa categoria
-      indices=[i for i, cats in enumerate(test_error_categories) if cat in cats]
-      if len(indices) == 0:
-        continue
-      y_true = np.array([all_step_targets[i] for i in indices])
-      y_pred = np.array([pred_step_labels[i] for i in indices])
-      y_score = np.array([all_step_outputs[i] for i in indices])
+      # 1 se c'è la categoria, 0 altrimenti
+
+      y_true = np.array([1 if cat in test_error_categories[i] else 0
+      for i in range(num_steps)])
+      
+      y_score = np.array(all_step_outputs)
+      y_pred = (y_score > threshold).astype(int)
 
       precision = precision_score(y_true, y_pred, zero_division=0)
       recall = recall_score(y_true, y_pred, zero_division=0)
@@ -490,6 +492,6 @@ def test_er_model(model, test_loader, criterion, device, phase, step_normalizati
             const.PR_AUC: pr_auc
         }
 
-
+    print(f"{phase} Category Level Metrics: {category_metrics}")
 
     return test_losses, sub_step_metrics, step_metrics, category_metrics
